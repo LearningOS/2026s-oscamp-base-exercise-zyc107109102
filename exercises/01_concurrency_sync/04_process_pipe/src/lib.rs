@@ -31,7 +31,9 @@
 //! Each function includes a `TODO` comment indicating where you need to write code.
 //! Run `cargo test` to check your implementations.
 
-use std::io::{self, Read, Write};
+use std::fs::read_to_string;
+use std::io::{self, BufReader, Read, Write};
+use std::os::unix::thread;
 use std::process::{Command, Stdio};
 
 /// Execute the given shell command and return its stdout output.
@@ -53,7 +55,9 @@ pub fn run_command(program: &str, args: &[&str]) -> String {
     // TODO: Set stdout to Stdio::piped()
     // TODO: Execute with .output() and get output
     // TODO: Convert stdout to String and return
-    todo!()
+    let now = Command::new(program).args(args).stdout(Stdio::piped()).output().unwrap();
+    String::from_utf8_lossy(&now.stdout).to_string()
+
 }
 
 /// Write data to child process (cat) stdin via pipe and read its stdout output.
@@ -89,7 +93,20 @@ pub fn pipe_through_cat(input: &str) -> String {
     // TODO: Write input to child process stdin
     // TODO: Drop stdin to close pipe (otherwise cat won't exit)
     // TODO: Read output from child process stdout
-    todo!()
+    use std::io::Write; 
+    let mut child = Command::new("cat")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn cat process");
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(input.as_bytes()).expect("Failed to write to stdin");
+    }
+    let mut output = String::new();
+    if let Some(mut stdout) = child.stdout.take() {
+        stdout.read_to_string(&mut output).expect("Failed to read from stdout");
+    }
+    output
 }
 
 /// Get child process exit code.
@@ -110,7 +127,13 @@ pub fn get_exit_code(command: &str) -> i32 {
     // TODO: Use Command::new("sh").args(["-c", command])
     // TODO: Execute and get status
     // TODO: Return exit code
-    todo!()
+    let result = Command::new("sh").args(&["-c" , command]).status();
+    match result {
+        Ok(stutus) => {
+            stutus.code().unwrap_or(1)
+        }
+        Err(_) => 1
+    }
 }
 
 /// Execute the given shell command and return its stdout output as a `Result`.
@@ -137,7 +160,14 @@ pub fn run_command_with_result(program: &str, args: &[&str]) -> io::Result<Strin
     // TODO: Set stdout to Stdio::piped()
     // TODO: Execute with .output() and handle Result
     // TODO: Convert stdout to String with from_utf8, mapping errors to io::Error
-    todo!()
+    let now = Command::new(program).args(args).stdout(Stdio::piped()).output();
+    match now {
+        Ok(st) => {
+            String::from_utf8(st.stdout)
+                .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid UTF-8"))
+        }
+        Err(e) => Err(e)
+    }
 }
 
 /// Interact with `grep` via bidirectional pipes, filtering lines that contain a pattern.
@@ -167,7 +197,25 @@ pub fn pipe_through_grep(pattern: &str, input: &str) -> String {
     // TODO: Drop stdin to close pipe
     // TODO: Read output from child stdout line by line
     // TODO: Collect and return matching lines
-    todo!()
+    use std::io::BufRead;
+    let mut child = Command::new("grep")
+        .arg(pattern)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("msg");
+    let mut childin = child.stdin.take().unwrap();
+    let mut childout = child.stdout.take().unwrap();
+    writeln!(childin , "{}" , input).unwrap();
+    drop(childin);
+    let reader = BufReader::new(childout);
+    let mut output: String = reader
+    .lines()
+    .filter_map(|line:Result<String , io::Error>| line.ok())
+    .collect::<Vec<String>>()
+    .join("\n");
+    if output.len() != 0 {output.push_str("\n"); }
+    output
 }
 
 #[cfg(test)]
@@ -190,6 +238,7 @@ mod tests {
     fn test_pipe_cat() {
         let output = pipe_through_cat("hello pipe!");
         assert_eq!(output, "hello pipe!");
+
     }
 
     #[test]
